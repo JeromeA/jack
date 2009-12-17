@@ -1,10 +1,10 @@
 
 
-(defpackage :cl-to-c
+(defpackage :jack
   (:use cl)
   (:shadow defun))
 
-(in-package :cl-to-c)
+(in-package :jack)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; C indent
@@ -86,7 +86,7 @@
                           (existing-function-to-c code))
                         (apply conv (cdr code))))
         (t (error "No to-c for ~S" code))))
-;(trace to-c)
+(trace to-c)
 
 (cl:defun type-to-c (type)
   (cond
@@ -123,14 +123,28 @@
 ; to-c implementations
 ;
 
-(cl:defun code-block-to-c (name code)
-  (to-c code))
+(cl:defun code-block-to-c (name &rest code)
+  (to-c (cons 'progn code)))
 
-(cl:defun code-let-to-c (names code)
-  (to-c code))
+(cl:defun code-let-to-c (names &rest codes)
+  (let ((decl (loop for (name code) in names
+                    for expr = (to-c code)
+                    collect (expr-ctype expr)
+                    collect (lispname-to-c name)
+                    collect (expr-value expr)))
+        (expr (to-c (cons 'progn codes))))
+    (list (expr-type expr)
+          (format nil "({~{~A ~A = ~A;~}~A;})" decl (expr-value expr)))))
 
-(cl:defun code-tagbody-to-c (code)
-  (to-c code))
+(cl:defun code-tagbody-to-c (&rest codes)
+  (loop for code in codes
+        collect (if (atom code)
+                  (format nil "label_~A:" code)
+                  (second (to-c code))) into exprs
+        finally (return (list nil (format nil "({~{~A;~}})" exprs)))))
+
+(cl:defun code-go-to-c (label)
+  (list nil (format nil "goto label_~A" label)))
 
 (cl:defun code-*-to-c (arg1 arg2)
   (let ((expr1 (to-c arg1))
@@ -207,7 +221,7 @@
                                      collect (lispname-to-c var)))))
         (add-declaration (format nil "~A;" signature))
         (add-code (list (format nil "~A {" signature)
-                        (format nil "return ~A;" (expr-value expr))
+                        (format nil "~A~A;" (if (expr-type expr) "return " "") (expr-value expr))
                         "}"))))))
 ;(trace build-function)
 
